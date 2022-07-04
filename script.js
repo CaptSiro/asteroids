@@ -1,3 +1,4 @@
+// debug only
 function logSimpleVariable (variableObject) {
   const key = Object.keys(variableObject)[0];
   console.log(key + ": " + variableObject[key]);
@@ -12,22 +13,26 @@ function logVariable (variableObject) {
 
 
 
-//TODO RenderAble, CollideAble
+
+
+
+
 class Player {
 
+  // RenderAble property to determine importance of rendering
   static LAYER = 10;
 
   maxHealth = 100;
   health;
   invincibility = false;
 
-  position; // Cartesian
-  force = Vector2.zero();
-  movement = Vector2.zero();
-  
-  isBoosting = false;
+  // current position of center of the Player
+  position;
+  force = Vector2.zero(); // current force
+  movement = Vector2.zero(); // movement from previous frame
   maxSpeed = 350;
   
+  // Player sprite
   path = [
     Coords.Polar.fromDegrees(0.5, 0), // start
     Coords.Polar.fromDegrees(1, 30), // top point
@@ -35,11 +40,15 @@ class Player {
     Coords.Polar.fromDegrees(1, 330), // bottom point
   ];
   
+  // Do you need to render flare?
+  isBoosting = false;
+  // flare sprite
   flare = [
     Coords.Polar.fromDegrees(0.75, 345),
     Coords.Polar.fromDegrees(1, 0),
     Coords.Polar.fromDegrees(0.75, 15),
   ];
+  // flare flicker animation
   flareAnimation = new Time.ContinuousInterpolate([
       new Time.Interval(1, 1.5, 50),
       new Time.Interval(1.5, 1, 50)
@@ -48,16 +57,21 @@ class Player {
     }, false);
   flareScale = 1;
 
-  rotation; // Polar
+  // rotation.distance holds speed addition for each frame the ArrowUp is pressed
+  rotation;
+  // degrees per second
   rotationSpeed = 180;
 
   scale = 20;
-  normalScale; // Number
+  normalScale;
 
+  // collideAble -> Engine.#framehandler():for(3)
   hitRadius;
 
+  // Delay between shots
   shootingSpeed = 200;
 
+  // color of sprite
   color = "white";
 
   constructor (health = -1) {
@@ -66,35 +80,34 @@ class Player {
     } else {
       this.health = health;
     }
-    this.position = Engine.center();
-    this.rotation = Coords.Polar.fromDegrees(-15, 90);
-    this.normalScale = this.scale;
+    this.position = Engine.center(); // default position
+    this.rotation = Coords.Polar.fromDegrees(-15, 90); // add 15 units of force if the button ArrowUp is pressed, face up
+    this.normalScale = this.scale; // remember default scale value
     this.hitRadius = this.scale;
 
+    // rotate clockwise
     Keyboard.addRegister(
       new Keyboard.KeyRegister("ArrowRight")
         .onKeyHold(() => { this.rotation.angle += Coords.toRadians(this.rotationSpeed * (Time.deltaTime / 1000)); })
     );
 
+    // rotate counter clockwise
     Keyboard.addRegister(
       new Keyboard.KeyRegister("ArrowLeft")
         .onKeyHold(() => { this.rotation.angle -= Coords.toRadians(this.rotationSpeed * (Time.deltaTime / 1000)); })
     );
 
-    // delay for shooting
+    // timeout for shooting
     const shootTimeout = new Time.TimeOut(this.shootingSpeed);
     // shooting animation
-    const shootAniInterpolator = new Time.Interpolate(
-      new Time.Interval(
-        this.normalScale * 1.4,
-        this.normalScale,
-        (this.shootingSpeed - (this.shootingSpeed / 3))
-      ),
-      (val) => this.scale = val,
-      false
-    );
+    // from: 140% of default scale
+    // to: default scale
+    // for: 2/3 this.shootingSpeed -> 200ms * 2/3 -> 133.34ms
+    // update: this.scale
+    // don't start immediately
+    const shootAniInterpolator = new Time.Interpolate(new Time.Interval(1.4, 1, this.shootingSpeed * 2/3), val => this.scale = this.normalScale * val, false);
   
-    // on shoot request
+    // on shoot request (holding down space)
     Keyboard.addRegister(
       new Keyboard.KeyRegister(" ")
         .onKeyHold(() => {
@@ -102,14 +115,14 @@ class Player {
           if (shootTimeout.finished) {
             // reset cooldown
             shootTimeout.reset();
-            // reset animation = animate
+            // reset animation -> starts animating
             shootAniInterpolator.reset();
           
-            // get modified polar coord of tip
+            // get modified polar coord of tip (current scale and rotation)
             const tip = new Coords.Polar(this.path[2].distance * this.scale, this.path[2].angle + this.rotation.angle);
             // move tip point on the player position
             const tipposition = Coords.addCartToPolar(this.position, tip);
-            // create new bullet
+            // create new bullet from the tip of the player with same direction
             new Bullet(tipposition, Vector2.fromPolar(tip), 40);
           }
         })
@@ -118,14 +131,16 @@ class Player {
     // flare animation handler, keydown -> start the animation last frame; keyup -> pause the animation on current frame
     Keyboard.addRegister(
       new Keyboard.KeyRegister("ArrowUp")
-        .onKeyDown(() => { this.flareAnimation.resume(); })
         .onKeyUp(() => { this.flareAnimation.pause(); })
+        .onKeyDown(() => { this.flareAnimation.resume(); })
     );
 
-    // add to collideAble (player can collide with asteroids) and renderAble (needs to be rerendered every frame)
+    // add to collideAble (player can collide with asteroids)
     Engine.addCollideAble(this);
+    // add renderAbles (needs to be rerendered every frame)
     Engine.addRenderAble(this);
 
+    // - inicialisation animations
     // fade in and scale in
     ParticleSystem.Effects.fadeIn(this, 500);
     new Time.Interpolate(new Time.Interval(this.normalScale * 0.5, this.normalScale, 500), v => this.scale = v);
@@ -135,16 +150,17 @@ class Player {
   }
 
   update () {
+    // check if the ArrowUp button is pressed -> signal to move the player
     if (Keyboard.isPressedDown("ArrowUp")) {
       // calculate new force from force on frame earlier
-      this.force = Vector2.clamp( // max speed
+      this.force = Vector2.clamp(
         Vector2.multiply( // gliding behaviour
           Vector2.add(
             this.movement,
             Vector2.fromPolar(this.rotation),
           ),
-        1.15),
-        this.maxSpeed
+        1.15), // the bigger the value the slipper the behaviour
+        this.maxSpeed // clamp for max speed so the player isn't yeeting itself into the oblivion
       );
 
       // rendering flare in render function
@@ -160,10 +176,12 @@ class Player {
     // scaling current force down for glide effect
     this.force = Vector2.multiply(this.force, 0.95);
 
+    // setting force to zero for simplier calculations (I hope)
     if (this.force.size < 1) {
       this.force = Vector2.zero();
     }
 
+    // remember current force for next frame
     this.movement = this.force;
 
     // checking if player is out of the playing field and teleporting him to the other side
@@ -189,9 +207,10 @@ class Player {
 
   }
 
+  // inicialization animation property
   heightProp = 0;
   render () {
-    // rendering character "arrow"
+    // rendering character sprite
     Engine.drawCicular(
       this.position,
       this.path,
@@ -200,7 +219,7 @@ class Player {
       this.color
     );
 
-    // rendering flare
+    // rendering flare sprite if the player is currently being "boosted"
     if (this.isBoosting) {
       Engine.drawCicular(
         this.position,
@@ -220,6 +239,8 @@ class Player {
       true
     );
 
+    // debug only
+
     // rendering player hit circle
     // Engine.drawCircle(
     //   this.position,
@@ -236,29 +257,36 @@ class Player {
    * @param {Vector2} direction Direction of impact from this objects prespective 
    */
   onCollision (asteroid, direction) {
+    // check for invincibility so the player doesn't get insta killed
     if (this.invincibility === false) {
+      // set asteroid as destroyed -> no more collisions on set asteroid, fade out
       asteroid.destroy();
+      // try to split the asteroid
       asteroid.split();
+      // take 1/4 of the asteroid scale as a demage
       this.takeDamage(asteroid.scale * 0.25);
+      // spwn particles around the impact in player direction
       ParticleSystem.spwnParticles(Coords.addCartToVec(this.position, Vector2.clamp(direction, this.hitRadius)), direction);
     }
   }
 
 
+  // getting color from green to red based on value
   #pickColor (value) {
     // https://stackoverflow.com/questions/7128675/from-green-to-red-color-depend-on-percentage
-    //value from 0 to 1
+    // value from 0 to 1
     const hue = (value * 120).toString(10);
     return ["hsl(", hue, ",100%,50%)"].join("");
   }
 
 
-  invincibilityTimeOut = new Time.TimeOut(400, false, () => this.invincibility = false);
+  // time where player is invincible and can't take any damage
+  #invincibilityTimeOut = new Time.TimeOut(400, false, () => this.invincibility = false);
   takeDamage (amount) {
     // player health animation interval:
-    // from
+    // from:
     const snapshot = this.health;
-    // to
+    // to:
     let finalHealth = this.health - amount;
   
     if (finalHealth < 0) {
@@ -271,7 +299,7 @@ class Player {
       (val, i) => this.health = val
     );
 
-    // if health is 0 end the game
+    // if finalHealth is 0 end the game
     healthInter.setOnFinished(() => {
       if (finalHealth == 0) {
         Engine.end();
@@ -281,12 +309,12 @@ class Player {
     // trigger shake effect with magnitude scaling on the damage taken over 250 ms
     ParticleSystem.triggerShake(250, ((amount / this.maxHealth) * 40) + 10);
 
-    // play hit animation
+    // play hit animation -> color player sprite
     ParticleSystem.Effects.hitEffect(this, 200);
 
-    // give invincibility for 220 miliseconds
+    // give invincibility for 400 miliseconds
     this.invincibility = true;
-    this.invincibilityTimeOut.reset();
+    this.#invincibilityTimeOut.reset();
   }
 
 }
@@ -295,8 +323,13 @@ class Player {
 
 
 
+
+
+
+
 class Asteroid {
 
+  // RenderAble property to determine importance of rendering
   static LAYER = 2;
 
   // all asteriods in the game
@@ -312,18 +345,29 @@ class Asteroid {
 
   scale;
   sizes = [30, 60, 90]; //! must be sorted from lowest to highest (Asteroid.split():if(0)) and only possitive integers
-  isizes;
+  isizes; // index in sizes array
 
+  // collideAble
   hitRadius;
+
   destroyed = false;
   destroy () {
+    // cancel all other collisions
     this.destroyed = true;
+    // fade out
+    ParticleSystem.Effects.fadeOut(this, 200, () => this.unlink());
   }
 
   direction;
 
   color = "white";
 
+  /**
+   * Creates an asteroid object and automatically links it to renderAbles
+   * @param {Coords.Cartesian} position Position of the center of the asteroid
+   * @param {Number} scale 
+   * @param {Vector2} direction Heading direction
+   */
   constructor (position = undefined, scale = undefined, direction = undefined) {
     // scale of the asteroid
     this.isizes = (scale === undefined) ? Math.floor(Engine.RNG(0, this.sizes.length)) : this.sizes.indexOf(scale);
@@ -336,10 +380,12 @@ class Asteroid {
     // creating random asteroid surface
     let angle = 0;
     let avgDistance;
+    // until its whole circle create new vertexies
     while (angle < 360) {
       // in range <0.75; 1>
       const distance = Engine.RNG(0.75, 1);
       if (angle !== 0) {
+        // update average distance with current distance
         avgDistance = (avgDistance + distance) / 2;
       } else {
         // first vertex
@@ -347,17 +393,19 @@ class Asteroid {
       }
 
       this.path.push(Coords.Polar.fromDegrees(distance, angle));
-      // in range <5; 15> degrees
+      // in range <5; 15> degrees for next vertex
       angle = angle + (Engine.RNG(5, 15));
     }
 
+    // set hit radius on the scale and average distance
     this.hitRadius = this.scale * avgDistance;
 
     if (position != undefined && direction != undefined) {
       this.position = position;
       this.direction = direction;
     } else {
-      // creating start position and end position
+      // creating start position and end position if position and direction are undefined
+      // spwnable sides spaces
       const sides = [
         {
           name: 'up',
@@ -378,19 +426,25 @@ class Asteroid {
         }
       ];
   
+      // pick random start side
       const startSide = sides[Math.floor(Engine.RNG(0, sides.length))];
+      // remove start side
       sides.splice(sides.indexOf(startSide), 1);
   
+      // pick random end side
       const endSide = sides[Math.floor(Engine.RNG(0, sides.length))];
   
-      
+      // pick random coords from start side
       const start = new Coords.Cartesian(startSide.width(Engine.width), startSide.height(Engine.height));
+      // pick random coords from end side and set it as target that the asteroid should arrive at
       const target = new Coords.Cartesian(endSide.width(Engine.width), endSide.height(Engine.height));
+      // create a vector from these 2 points and pick random size (speed of the asteroid)
       this.direction = Vector2.clamp(new Vector2(target.x - start.x, target.y - start.y), Engine.RNG(30, 80));
       this.position = start;
     }
 
     Asteroid.asteroids.push(this);
+    // needs to be rerendered every frame
     Engine.addRenderAble(this);
   }
 
@@ -417,8 +471,6 @@ class Asteroid {
         new Asteroid(pos, s, dir);
       }
     }
-
-    ParticleSystem.Effects.fadeOut(this, 200, () => this.unlink());
   }
 
 
@@ -428,6 +480,7 @@ class Asteroid {
     this.position.x += this.direction.x * (Time.deltaTime / 1000);
     this.position.y += this.direction.y * (Time.deltaTime / 1000);
 
+    // check if it left the playing field
     if (Coords.Cartesian.isOutOfBounds(this.position, this.scale + 10)) {
       this.unlink();
     }
@@ -447,6 +500,8 @@ class Asteroid {
       this.color
     );
 
+    // debug only 
+
     // Engine.drawVector(this.position, this.direction, "blue");
 
   }
@@ -462,8 +517,13 @@ class Asteroid {
 
 
 
+
+
+
+
 class Bullet {
 
+  // RenderAble property to determine importance of rendering
   static LAYER = 5;
 
   // coords center of bullet
@@ -472,26 +532,29 @@ class Bullet {
   speed;
   size;
 
+  // collideAble
   hitRadius;
 
+  // color of the bullet
   color = "white";
 
   /**
-   * 
+   * Creates a bullet and adds it to collideable and renderable
    * @param {Coords.Cartesian} position Cartesian point in space (position of player tip)
    * @param {Vector2} direction Normalized Vector2
    * @param {Number} speed Travel speed of a bullet in pixels per second
    * @param {Number} size Radius of bullet in pixels
    */
-  constructor (position, direction, speed = 50, size = 5) {
+  constructor (position, direction, speed = 40, size = 5) {
     this.position = position;
     this.direction = direction;
     this.speed = speed;
     this.size = size;
     this.hitRadius = size;
 
-    // add to renderables will be rerandered every frame and collideAble (can collide with asteroid)
+    // add to renderables will be rerandered every frame
     Engine.addRenderAble(this);
+    // collideAble (can collide with asteroid)
     Engine.addCollideAble(this);
   }
 
@@ -518,18 +581,27 @@ class Bullet {
    * @param {Vector2} direction Direction of impact from this objects prespective 
    */
   onCollision (asteroid, direction) {
+    // remove collision from set asteroid and fade it out
     asteroid.destroy();
+    // add score that depends on the scale of the destroyed asteroid
     Engine.addScore(asteroid.scale);
+    // try to split asteroid into smaller pieces
     asteroid.split();
+    // spwn particles on the impact and from bullet direction
     ParticleSystem.spwnParticles(Coords.addCartToVec(this.position, Vector2.clamp(direction, this.hitRadius)), direction);
+    // remove this bullet
     this.unlink();
   }
 
 
   unlink () {
-    // remove object from renderable array
-    Engine.removeRenderAble(this);
+    // remove from renderables
     Engine.removeCollideAble(this);
+    // fade out
+    ParticleSystem.Effects.fadeOut(this, 200, () => {
+      // when the fade out effect is finished -> remove object from renderAbles 
+      Engine.removeRenderAble(this);
+    });
   }
 
 }
@@ -538,22 +610,25 @@ class Bullet {
 
 
 
+
+
+
+
 class Time {
 
+  // difference between frames in milliseconds
   static deltaTime = 0;
+  // time of last frame
   static #lastSnapshot;
 
   // all time relate objects that needs to be update each frame such as TimeOut or Interpolate
   static #toUpdate = [];
 
-  static get toUpdate () {
-    return this.#toUpdate;
-  }
-
   // add object to update array
   static link (idObject) {
     let inserted = false;
 
+    // run through all Time.#toUpdate array and try to find time function with same ID and update the object
     for (let i = 0; i < this.#toUpdate.length; i++) {
       if (this.#toUpdate[i]._ID == idObject._ID) {
         this.#toUpdate[i] = idObject;
@@ -562,6 +637,7 @@ class Time {
       }
     }
     
+    // else push new object on the end
     if (!inserted) {
       this.#toUpdate.push(idObject);
     }
@@ -570,6 +646,7 @@ class Time {
   static unlink (id) {
     let index = -1;
 
+    // find index of given ID
     for (let i = 0; i < this.#toUpdate.length; i++) {
       if (this.#toUpdate[i]._ID == id) {
         index = i;
@@ -578,6 +655,7 @@ class Time {
     }
 
     if (index != -1) {
+      // remove object on found index
       this.#toUpdate.splice(index, 1);
     }
   }
@@ -590,23 +668,33 @@ class Time {
   }
 
   static setup () {
+    // set default lastSnapshot to this moment
     this.#lastSnapshot = Date.now();
   }
 
   static reset () {
+    // reset ID
     this.#ID = 0;
+    // reset timing functions
     this.#toUpdate = [];
+    // reset difference between frames
     this.deltaTime = 0;
+    // reset lastSnapshot for this moment
     this.#lastSnapshot = Date.now();
   }
 
   // update Time.deltaTime
   static fixedUpdate () {
+    // get this moment
     const current = Date.now();
+    // get difference between now and previous frame
     this.deltaTime = (current - this.#lastSnapshot);
+    // save for next frame
     this.#lastSnapshot = current;
 
     if (Engine.mode === "debug") {
+      // in debug mode -> able to play the game frame by frame
+      // set time difference to set value
       this.deltaTime = 20;
       console.log("Time.deltaTime: " + Time.deltaTime);
     }
@@ -625,9 +713,11 @@ class Time {
   // id system for toUpdate array
   static ID = class ID {
 
+    // remember _ID on current object
     _ID;
 
     constructor () {
+      // request new ID
       this._ID = Time.id();
     }
 
@@ -636,10 +726,13 @@ class Time {
     }
 
     link () {
+      // add current object to timing functions that needs to be updated every frame
       Time.link(this);
     }
     
     unlink () {
+      // remove current object from timing functions that needs to be updated every frame
+      // stops the countdown but still sits in memory if the timeing function is saved in variable for later reuse
       Time.unlink(this._ID);
     }
 
@@ -649,7 +742,7 @@ class Time {
   static TimeOut = class TimeOut extends Time.ID {
 
     finished = false;
-    onFinished;
+    onFinished = () => {}; // function that will be played when the timeout has finished
     duration;
     defaultDuration;
 
@@ -665,7 +758,7 @@ class Time {
     }
 
     /**
-     * 
+     * Creates new timing function of type TimeOut -> countdowns from the given duration and fires onFinished event when the countdown is completed
      * @param {Number} duration Duration of timeout in miliseconds. Only possitive numbers are valid input
      * @param {Boolean} autoLink Starts on creation TRUE|FALSE
      * @param {Function} onFinished Handler function for end of timeout
@@ -679,13 +772,19 @@ class Time {
 
       this.defaultDuration = duration;
       this.duration = duration;
-      this.onFinished = onFinished;
+
+      if (typeof onFinished === "function") {
+        this.onFinished = onFinished;
+      } else {
+        throw new Error("Time.TimeOut.constructor(): onFinished handler must be a function.");
+      }
 
       // add to update array on creation of object and start counting down the timeout
       if (autoLink) {
         this.link();
       } else {
         this.#paused = true;
+        this.finished = true;
       }
     }
 
@@ -700,7 +799,8 @@ class Time {
         // remove from update array -> will no longer be updated
         this.unlink();
         
-        this.onFinished(); // call callback on finished event
+        // call callback on finished event
+        this.onFinished();
       }
     }
 
@@ -710,15 +810,18 @@ class Time {
      */
     reset (duration = -1) { // reuse timeout for new duration value. If the duration value is not passed the value on creation|last will be used
       this.duration = duration;
-      if (duration < 0) { // no duration passed
+      if (duration < 0) {
+        // no duration passed
         this.duration = this.defaultDuration;
-      } else if (!this.useOnCreationValue) { // write duration if useCreationValue is set to false -> useLastValue
+      } else if (!this.useOnCreationValue) {
+        // write duration if useCreationValue is set to false -> useLastValue
         this.defaultDuration = duration;
       }
 
       this.finished = false;
       this.#paused = false;
-      this.link(); // start counting down
+      // start counting down
+      this.link();
     }
 
     /**
@@ -730,13 +833,14 @@ class Time {
       this.finished = finishesCountdown;
       this.#paused = true;
 
-      if (this.finished && this.onFinished !== null) {
+      if (this.finished) {
         this.onFinished();
       }
     }
 
     /**
      * Resumes from paused state
+     * If paused and finished equals true -> resets the whole timer 
      */
     resume () {
       if (this.#paused) {
@@ -757,6 +861,7 @@ class Time {
 
   static Interpolate = class Interpolate extends Time.ID {
     
+    // array of intervals in order of execution [0] -> [max index]
     intervals;
     changeIntervals (intervals) {
       if (intervals instanceof Array) {
@@ -765,11 +870,13 @@ class Time {
         this.intervals = [intervals];
       }
     }
+    // index of current interval
     intPointer = 0;
+    // time accumulator on current interval
     localAcc = 0;
     finished = false;
     currentValue;
-    onValueChange;
+    onValueChange = (value) => {};
     #paused = false;
     onFinished = () => {};
 
@@ -788,7 +895,11 @@ class Time {
         this.intervals = [intervals];
       }
 
-      this.onValueChange = onValueChange;
+      if (typeof onValueChange === "function") {
+        this.onValueChange = onValueChange;
+      } else {
+        throw new Error("Time.Interpolate.constructor(): onValueChange handler must be a function with one parameter (value).")
+      }
 
       // add to update array on creation of object and start counting down the timeout
       if (autoLink) {
@@ -800,7 +911,11 @@ class Time {
     }
 
     setOnFinished (func) {
-      this.onFinished = func;
+      if (typeof func === "function") {
+        this.onFinished = func;
+      } else {
+        throw new Error("Time.Interpolate.setOnFinished(): onFinished handler must be a function with one parameter (value).")
+      }
     }
 
     next () {
@@ -814,9 +929,12 @@ class Time {
         this.intPointer++;
         if (this.intPointer === this.intervals.length) {
           this.finished = true;
-          this.onFinished(); // call callback on finished event
-          this.unlink(); // remove from update array - will no longer be updated
-          return this.intervals[this.intervals.length - 1].to; // return last value of the last interval
+          // call callback on finished event
+          this.onFinished();
+          // remove from update array - will no longer be updated
+          this.unlink();
+          // return last value of the last interval
+          return this.intervals[this.intervals.length - 1].to;
         }
         // reset localAcc for new interval
         this.localAcc = 0;
@@ -846,6 +964,7 @@ class Time {
 
     /**
      * Resumes from paused state
+     * If paused and finished equals true -> resets whole Interpolate
      */
     resume () {
       if (this.#paused) {
@@ -895,7 +1014,11 @@ class Time {
         throw new Error("Negative duration passed. Only possitive numbers are valid input. Expected: <0; +Infinity>. Got: " +  duration);
       }
       this.duration = duration;
-      this.onValueChange = onValueChange;
+      if (typeof onValueChange === "function") {
+        this.onValueChange = onValueChange;
+      } else {
+        throw new Error("Time.RandomGenerator.constructor(): onValueChange handler must be a function with one parameter (value).")
+      }
 
       if (autoLink) {
         this.link();
@@ -905,7 +1028,11 @@ class Time {
     }
 
     setOnFinished (func) {
-      this.onFinished = func;
+      if (typeof func === "function") {
+        this.onFinished = func;
+      } else {
+        throw new Error("Time.RandomGenerator.setOnFinished(): onFinished handler must be a function with one parameter (value).")
+      }
     }
 
     next () {
@@ -991,7 +1118,11 @@ class Time {
     constructor (intervals, onValueChange, autoLink = true) {
       super();
       this.intervals = intervals;
-      this.onValueChange = onValueChange;
+      if (typeof onValueChange === "function") {
+        this.onValueChange = onValueChange;
+      } else {
+        throw new Error("Time.ContinuousInterpolate.constructor(): onValueChange handler must be a function with one parameter (value).")
+      }
 
       if (autoLink) {
         this.link();
@@ -1001,7 +1132,11 @@ class Time {
     }
 
     setOnFinished (func) {
-      this.onFinished = func;
+      if (typeof func === "function") {
+        this.onFinished = func;
+      } else {
+        throw new Error("Time.ContinuousInterpolate.setOnFinished(): onFinished handler must be a function with one parameter (value).")
+      }
     }
 
     next () {
@@ -1112,28 +1247,37 @@ class Time {
 
 
 
+
+
+
+
 class ParticleSystem {
 
+  // for screen shake
   static #multiplier;
   static triggerShake (duration, strength = 20) {
+    // reset back global offset
     const onFinishedHandler = () => {
       Engine.setGlobalOffset(new Coords.Cartesian(0, 0));
     };
-    const shakeInter = new Time.Interpolate(
-      new Time.Interval(strength, 0, duration),
-      (val, i) => {
+
+    // from: strength
+    // to: 0
+    // for: duration
+    // change: this.#multiplier
+    // start on creation
+    const shakeInter = new Time.Interpolate(new Time.Interval(strength, 0, duration), (val) => {
         this.#multiplier = val;
-      }
-    );
+      });
 
-    const shakeGenerator = new Time.RandomGenerator(
-      2,
-      duration,
-      (vals, i) => {
+    // generate 2 random values per frame
+    // for: duration
+    // change: Engine.globalOffSet
+    const shakeGenerator = new Time.RandomGenerator(2, duration, (vals) => {
         Engine.setGlobalOffset(new Coords.Cartesian((vals[0] - 0.5) * this.#multiplier, (vals[1] - 0.5) * this.#multiplier));
-      }
-    );
+      });
 
+    // onFinished event reset Engine.globalOffset
     shakeInter.setOnFinished(onFinishedHandler);
     shakeGenerator.setOnFinished(onFinishedHandler);
   }
@@ -1141,6 +1285,7 @@ class ParticleSystem {
   
   static Particle = class Particle extends Bullet {
 
+    // RenderAble property to determine importance of rendering
     static LAYER = 9;
 
     interpolator;
@@ -1161,6 +1306,7 @@ class ParticleSystem {
       super(position, direction, speed, size);
       this.baseSpeed = this.speed;
       this.baseSize = this.size;
+      // slowly shrink and slow down the particle
       this.interpolator = new Time.Interpolate(new Time.Interval(1, 0, ttl), v => {
         this.speed = v * this.baseSpeed;
         this.size = v * this.baseSize;
@@ -1171,8 +1317,10 @@ class ParticleSystem {
         this.color = "hsl(" + Math.round(Engine.RNG(0, 360)) + ", 100%, 70%)";
       }
 
+      // unlink from collideable
       super.unlink();
       
+      // link only to renderable
       Engine.addRenderAble(this);
     }
 
@@ -1221,29 +1369,27 @@ class ParticleSystem {
     }
   }
 
-  
-  static update () {
-
-  }
-
   static Effects = class Effects {
 
-    static fadeOut (renderAble, duration, onFinished = () => {}) {
-      new Time.Interpolate(new Time.Interval(100, 0, duration), v => renderAble.color = "hsl(0, 0%, " + v + "%)", true)
+    // fade out object -> from white to black
+    static fadeOut (renderAbles, duration, onFinished = () => {}) {
+      new Time.Interpolate(new Time.Interval(100, 0, duration), v => renderAbles.color = "hsl(0, 0%, " + v + "%)", true)
         .setOnFinished(onFinished);
     }
 
-    static fadeIn (renderAble, duration, onFinished = () => {}) {
-      new Time.Interpolate(new Time.Interval(0, 100, duration), v => renderAble.color = "hsl(0, 0%, " + v + "%)", true)
+    // fade in object -> from black to white
+    static fadeIn (renderAbles, duration, onFinished = () => {}) {
+      new Time.Interpolate(new Time.Interval(0, 100, duration), v => renderAbles.color = "hsl(0, 0%, " + v + "%)", true)
         .setOnFinished(onFinished);
     }
 
-    static hitEffect (renderAble, duration, onFinished = () => {}) {
+    // change color from white to red-ish and then back white
+    static hitEffect (renderAbles, duration, onFinished = () => {}) {
       new Time.Interpolate([
         new Time.Interval(100, 25, 20),
         new Time.Interval(25, 25, duration),
         new Time.Interval(25, 100, 20)
-      ], v => renderAble.color = "hsl(340,100%," + v + "%)", true)
+      ], v => renderAbles.color = "hsl(340,100%," + v + "%)", true)
         .onFinished(onFinished);
     }
 
@@ -1255,14 +1401,19 @@ class ParticleSystem {
 
 
 
+
+
+
+
 class Engine {
 
+  // random number from to
   static RNG (from, to) {
     return Math.random() * (Math.max(from, to) - Math.min(from, to)) + from;
   }
 
 
-
+  // screen shake effect
   static #globalOffsetposition;
   static getGlobalOffSet () {
     if (this.#globalOffsetposition === undefined) {
@@ -1277,54 +1428,33 @@ class Engine {
 
 
 
-
-  static renderAble = [];
+  static renderAbles = [];
   /**
-   * Gets index from renderAble array for layer given layer
+   * Gets index from renderAbles array for layer given layer
    * @param {Number} layer
    * @returns 
    */
   static renderAbleIndex(layer) { // https://stackoverflow.com/questions/1344500/efficient-way-to-insert-a-number-into-a-sorted-array-of-numbers
     var low = 0,
-    high = this.renderAble.length;
+    high = this.renderAbles.length;
 
     while (low < high) {
       var mid = (low + high) >>> 1;
-      if ((this.renderAble[mid].constructor.LAYER ?? this.renderAble[mid].layer ?? 0) > layer) low = mid + 1;
+      if ((this.renderAbles[mid].constructor.LAYER ?? this.renderAbles[mid].layer ?? 0) > layer) low = mid + 1;
       else high = mid;
     }
     return low;
   }
-  static addRenderAble (object, layer = 0) {
+  static addRenderAble (object, layer = 0) { // add to sorted array of renderables by LAYER
     if (object.constructor.LAYER === undefined && object.layer === undefined) {
       object.layer = layer ?? 0;
     }
 
     layer = object.constructor.LAYER ?? object.layer;
-    this.renderAble.splice(this.renderAbleIndex(layer), 0, object);
+    this.renderAbles.splice(this.renderAbleIndex(layer), 0, object);
   }
   static removeRenderAble (object) {
-    Engine.renderAble.splice(Engine.renderAble.indexOf(object), 1);
-  }
-
-
-
-
-  static #progressiveRunables = [];
-  static addPR (label, runable) {
-    this.#progressiveRunables.push({ label, runable });
-  }
-  static removePR (label) {
-    let index = -1;
-    for (let i = 0; i < this.#progressiveRunables.length; i++) {
-      if (this.#progressiveRunables[i].label = label) {
-        index = i;
-      }
-    }
-
-    if (index != -1) {
-      this.#progressiveRunables.splice(index, 1);
-    }
+    Engine.renderAbles.splice(Engine.renderAbles.indexOf(object), 1);
   }
 
 
@@ -1346,18 +1476,15 @@ class Engine {
     this.iteration++;
     Time.fixedUpdate();
     Keyboard.update();
-    ParticleSystem.update();
     
     Time.update();
 
-    for (let i = 0; i < this.#progressiveRunables.length; i++) {
-      this.#progressiveRunables[i].runable();
+    // update props of renderables
+    for (let i = Engine.renderAbles.length - 1; i >= 0; i--) {
+      Engine.renderAbles[i].update();
     }
 
-    for (let i = Engine.renderAble.length - 1; i >= 0; i--) {
-      Engine.renderAble[i].update();
-    }
-
+    // check for collisions
     for (let i = 0; i < Asteroid.asteroids.length; i++) {
       const a = Asteroid.asteroids[i];
       for (let i = 0; i < this.collideAble.length; i++) {
@@ -1369,13 +1496,16 @@ class Engine {
       }
     }
 
+    // clear game area
     this.canvas.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (var i = Engine.renderAble.length - 1; i >= 0; i--) {
-      Engine.renderAble[i].render();
+    // rereder game area
+    for (var i = Engine.renderAbles.length - 1; i >= 0; i--) {
+      Engine.renderAbles[i].render();
     }
 
     if (Engine.mode !== "debug") {
+      // check if the game should be ended
       if (!this.endOnNextFrame) {
         this.#frameRequest = requestAnimationFrame(this.#frameHandler);
       } else {
@@ -1400,16 +1530,20 @@ class Engine {
   static asteroidInterval;
   
   static start () {
+    // get html elements
     this.#canvasHTML = document.querySelector("canvas#canvas");
     this.#scoreHTML = document.querySelector("p.score");
     this.canvas = this.#canvasHTML.getContext("2d");
     
+    // setup time and keyboard listener
     Time.setup();
     Keyboard.setup();
 
+    // add player and one asteroid
     new Player();
     new Asteroid(undefined, 90, undefined);
     
+    // spwn asteroid every 2500ms
     this.asteroidInterval = new Time.TimeOut(2500, true, () => {
       new Asteroid(undefined, 90, undefined);
       this.asteroidInterval.reset();
@@ -1447,8 +1581,9 @@ class Engine {
 
 
   static reset () {
+    // reset whole game to default state
     this.score = 0;
-    this.renderAble = [];
+    this.renderAbles = [];
     this.collideAble = [];
     this.#globalOffsetposition = new Coords.Cartesian(0, 0);
     this.endOnNextFrame = false;
@@ -1467,6 +1602,7 @@ class Engine {
 
 
   static score = 0;
+  // score animator
   static #scoreInterpolator = new Time.Interpolate(new Time.Interval(0, 0, 0), v => {
     v = Math.round(v);
     this.score = v;
@@ -1478,11 +1614,15 @@ class Engine {
       from = this.score;
       to = this.score + amount;
     } else {
+      // pause animation
       this.#scoreInterpolator.pause(true);
+      // get current value and set it as start
       from = this.#scoreInterpolator.currentValue;
+      // get to value of interval and add amount to it
       to = this.#scoreInterpolator.intervals[0].to + amount;
     }
 
+    // set and interpolate new interval
     this.#scoreInterpolator.changeIntervals(new Time.Interval(from, to, 350));
     this.#scoreInterpolator.reset();
   }
@@ -1504,15 +1644,19 @@ class Engine {
    * @param {Boolean} fill Do you want to fill path? TRUE|FALSE
    */
   static drawCicular (center, polarCoords, rotationAngle = 0, scale = 1, style = "white", closePath = true, fill = false) {
+    // modify points
     const modifiedPCoords = polarCoords.map(p => new Coords.Polar(p.distance * scale, p.angle + rotationAngle));
+    // modify center by globalOffSet
     const offsetedCenter = Coords.addCartToCart(center, Engine.getGlobalOffSet());
 
+    // get first vertex and move "pen" to it
     const start = Coords.addCartToPolar(offsetedCenter, modifiedPCoords.shift());
 
     this.canvas.beginPath();
     this.canvas.lineWidth = "3";
     this.canvas.moveTo(start.x, start.y);
     
+    // iterate through all vertexies and draw line between them
     for (let i = 0; i < modifiedPCoords.length; i++) {
       const vertex = Coords.addCartToPolar(offsetedCenter, modifiedPCoords[i]);
       this.canvas.lineTo(vertex.x, vertex.y);
@@ -1522,6 +1666,7 @@ class Engine {
       this.canvas.closePath();
     }
     
+    // fill or stroke
     if (fill) {
       this.canvas.fillStyle = style;
       this.canvas.fill();
@@ -1532,11 +1677,13 @@ class Engine {
   }
 
   static drawCircle (center, radius, style = "white", fill = false) {
+    // offset the center of the circle by globalOffSet
     const offsetedCenter = Coords.addCartToCart(center, Engine.getGlobalOffSet());
 
     this.canvas.beginPath();
     this.canvas.arc(offsetedCenter.x, offsetedCenter.y, radius, 0, 2 * Math.PI);
 
+    // fill or stroke
     if (fill) {
       this.canvas.fillStyle = style;
       this.canvas.fill();
@@ -1567,6 +1714,7 @@ class Engine {
       heigh
     );
 
+    // fill or stroke
     if (fill) {
       this.canvas.fillStyle = style;
       this.canvas.fill();
@@ -1596,8 +1744,13 @@ class Engine {
 
 
 
+
+
+
+
 class Keyboard {
 
+  // key event info holder
   static KeyRegister = class KeyRegister {
 
     down = () => {};
@@ -1624,7 +1777,9 @@ class Keyboard {
 
   }
 
+  // all key event info holders
   static #registers = {};
+  // active keys that are currently pressed down
   static #active = new Set();
 
   static isPressedDown (key) {
@@ -1632,6 +1787,7 @@ class Keyboard {
   }
 
   static setup () {
+    // add to active and call keydown event
     document.addEventListener("keydown", evt => {
       this.#active.add(evt.key);
       if (this.#registers[evt.key] !== undefined) {
@@ -1641,6 +1797,7 @@ class Keyboard {
       }
     });
     
+    // remove from active and call keyup event
     document.addEventListener("keyup", evt => {
       this.#active.delete(evt.key);
       if (this.#registers[evt.key] !== undefined) {
@@ -1657,6 +1814,7 @@ class Keyboard {
   }
 
   static addRegister (register) {
+    // add key event info holder
     if (this.#registers[register.key] === undefined) {
       this.#registers[register.key] = [register];
     } else {
@@ -1675,6 +1833,11 @@ class Keyboard {
   }
 
 }
+
+
+
+
+
 
 
 
@@ -1751,6 +1914,11 @@ class Vector2 {
   }
 
 }
+
+
+
+
+
 
 
 
@@ -1904,6 +2072,11 @@ class Coords {
   }
 
 }
+
+
+
+
+
 
 
 
