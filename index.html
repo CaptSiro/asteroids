@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asteroids</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      font-family: "minecraft-font";
+      color: white;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background-color: black;
+      width: 100vw;
+      height: 100vh;
+      z-index: 0;
+
+      position: relative;
+    }
+
+    section {
+      position: absolute;
+      top: 0;
+      left: 0;
+      backdrop-filter: blur(var(20px));
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 1;
+
+      transition: opacity 1000ms linear;
+    }
+    
+    section.hide {
+      opacity: 0;
+      z-index: -1;
+      transition: opacity 1000ms linear;
+    }
+    
+    
+    section.ui {
+      z-index: 10;
+      background-color: rgba(0, 0, 0, 0.3);
+    }
+    
+    section.gameOver {
+      z-index: 9;
+      background-color: rgba(128, 0, 0, 0.3);
+    }
+
+    section.gameOver h3 {
+      color: crimson;
+    }
+
+
+    section.game {
+      z-index: 5;
+    }
+    section.game #canvas {
+      width: 600px;
+      height: 600px;
+      border: 2px solid white;
+    }
+
+    @font-face {
+      font-family: "minecraft-font";
+      src: url(font/MinecraftRegular-Bmg3.otf);
+    }
+
+    section.game p.score {
+      font-size: 1.5em;
+    }
+
+    button {
+      padding: 8px 16px;
+      margin-top: 16px;
+      outline: unset;
+      border: white 2px solid;
+      background-color: transparent;
+    }
+
+    button:hover {
+      cursor: pointer;
+      color: dodgerblue;
+    }
+  </style>
+
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <section class="ui">
+    <h1>Asteroids</h1>
+    <button class="play">Play</button>
+  </section>
+
+  <section class="gameOver hide">
+    <h1>Game over!</h1>
+    <p class="totalScore"></p>
+    <button class="playAgain">Play again</button>
+  </section>
+
+  <section class="game">
+    <p class="score">SCORE: 0</p>
+    <canvas id="canvas" width="800" height="800"></canvas>
+  </section>
+</body>
+</html>
